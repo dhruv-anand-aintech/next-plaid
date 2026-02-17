@@ -1,0 +1,20 @@
+[package]
+name = "colgrep-cloud"
+version = "0.1.0"
+edition = "2021"
+description = "Cloudflare Worker for ColGREP - semantic code search with auth"
+license = "Apache-2.0"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+worker = { version = "0.7", features = ["d1"] }
+worker-macros = "0.7"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+pbkdf2 = "0.12"
+sha2 = "0.10"
+base64 = "0.21"
+futures-util = "0.3"
+getrandom = { version = "0.2", features = ["js"] }

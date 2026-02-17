@@ -1,0 +1,35 @@
+name = "colgrep-cloud"
+main = "build/worker.js"
+compatibility_date = "2024-01-01"
+
+[build]
+command = "cargo install -q worker-build@^0.7 && worker-build --release"
+
+[vars]
+ENVIRONMENT = "production"
+
+# D1 database for users and codebase metadata
+[[d1_databases]]
+binding = "DB"
+database_name = "colgrep-cloud"
+database_id = "REPLACE_AFTER_WRANGLER_D1_CREATE"
+
+# R2 bucket for code storage (index blobs, code units)
+[[r2_buckets]]
+binding = "CODE_STORAGE"
+bucket_name = "colgrep-code"
+
+# Workers AI for embeddings (query + index)
+[ai]
+binding = "AI"
+
+# Vectorize (optional - for semantic search). Create with:
+# wrangler vectorize create colgrep-vectors --dimensions=768 --metric=cosine
+# [[vectorize]]
+# binding = "VECTORIZE"
+# index_name = "colgrep-vectors"
+
+# KV for session tokens (token -> user_id)
+[[kv_namespaces]]
+binding = "SESSIONS"
+id = "REPLACE_AFTER_WRANGLER_KV_CREATE"
