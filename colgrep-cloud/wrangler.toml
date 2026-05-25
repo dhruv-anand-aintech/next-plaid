@@ -33,3 +33,7 @@ binding = "AI"
 [[kv_namespaces]]
 binding = "SESSIONS"
 id = "REPLACE_AFTER_WRANGLER_KV_CREATE"
+
+# Hugging Face Inference API token for semantic search (optional)
+# Set with: wrangler secret put HF_TOKEN
+# When set, uploads compute embeddings via sentence-transformers/all-MiniLM-L6-v2

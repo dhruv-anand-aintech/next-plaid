@@ -8,6 +8,7 @@
 //! - Web UI for login, register, dashboard
 
 mod auth;
+mod embeddings;
 mod handlers;
 mod html;
 mod models;

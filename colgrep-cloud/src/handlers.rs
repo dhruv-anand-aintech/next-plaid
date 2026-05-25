@@ -1,6 +1,7 @@
 //! HTTP request handlers
 
 use crate::auth;
+use crate::embeddings;
 use crate::html;
 use crate::models::*;
 use crate::storage;
@@ -241,18 +242,34 @@ pub async fn upload_index(mut req: Request, ctx: RouteContext<()>) -> Result<Res
         .await
         .map_err(|e| Error::RustError(format!("Invalid JSON: {}", e)))?;
 
+    let mut blob = IndexBlob {
+        code_units: body.code_units,
+        embeddings: None,
+    };
+
+    // If HF_TOKEN is set, fetch embeddings via Hugging Face Inference API
+    if let Ok(secret) = ctx.secret("HF_TOKEN") {
+        let hf_token = secret.to_string();
+        let texts: Vec<String> = blob.code_units.iter().map(|u| u.code.clone()).collect();
+        if let Ok(embs) = embeddings::fetch_embeddings(&hf_token, &texts, None).await {
+            if embs.len() == blob.code_units.len() {
+                blob.embeddings = Some(embs);
+            }
+        }
+    }
+
     let bucket = ctx.env.bucket("CODE_STORAGE")?;
     let key = format!("{}/{}", user_id, id);
-    let data = serde_json::to_vec(&body.code_units).map_err(|e| Error::RustError(e.to_string()))?;
+    let data = serde_json::to_vec(&blob).map_err(|e| Error::RustError(e.to_string()))?;
     storage::store_code_units_in_r2(&bucket, &key, &data).await?;
 
-    let file_count = body
+    let file_count = blob
         .code_units
         .iter()
         .map(|u| u.file_path.as_str())
         .collect::<std::collections::HashSet<_>>()
         .len();
-    let code_unit_count = body.code_units.len() as u32;
+    let code_unit_count = blob.code_units.len() as u32;
     storage::update_codebase_stats(&d1, &id, file_count as u32, code_unit_count).await?;
 
     Response::from_json(&serde_json::json!({
@@ -298,24 +315,57 @@ pub async fn search(mut req: Request, ctx: RouteContext<()>) -> Result<Response>
         .bytes()
         .await
         .map_err(|e| Error::RustError(e.to_string()))?;
-    let code_units: Vec<CodeUnitUpload> =
-        serde_json::from_slice(&body_bytes).map_err(|e| Error::RustError(e.to_string()))?;
 
-    // Simple text search (semantic search requires Vectorize - TODO)
+    // Parse index blob (supports legacy array format or new {code_units, embeddings})
+    let blob: IndexBlob = match serde_json::from_slice::<serde_json::Value>(&body_bytes) {
+        Ok(serde_json::Value::Array(arr)) => IndexBlob {
+            code_units: serde_json::from_value(serde_json::Value::Array(arr))
+                .map_err(|e| Error::RustError(e.to_string()))?,
+            embeddings: None,
+        },
+        Ok(v) => serde_json::from_value(v).map_err(|e| Error::RustError(e.to_string()))?,
+        Err(e) => return Err(Error::RustError(e.to_string())),
+    };
+
+    let code_units = &blob.code_units;
     let q = search_req.query.to_lowercase();
     let max_results = search_req.max_results.unwrap_or(15).min(50) as usize;
-    let mut matches: Vec<(f32, &CodeUnitUpload)> = code_units
-        .iter()
-        .filter_map(|u| {
-            if u.code.to_lowercase().contains(&q) {
-                Some((1.0, u))
-            } else if u.file_path.to_lowercase().contains(&q) {
-                Some((0.8, u))
-            } else {
-                None
-            }
-        })
-        .collect();
+
+    let mut matches: Vec<(f32, &CodeUnitUpload)> = if let (Some(embeddings), Ok(hf_secret)) =
+        (blob.embeddings.as_ref(), ctx.secret("HF_TOKEN"))
+    {
+        // Semantic search: embed query via HF, compute cosine similarity
+        let hf_token = hf_secret.to_string();
+        let query_embs = embeddings::fetch_embeddings(&hf_token, &[search_req.query.clone()], None)
+            .await
+            .ok()
+            .and_then(|v| v.into_iter().next());
+        if let (Some(query_emb), embs) = (query_embs, embeddings) {
+            code_units
+                .iter()
+                .zip(embs.iter())
+                .map(|(u, emb)| (embeddings::cosine_similarity(&query_emb, emb), u))
+                .filter(|(score, _)| *score > 0.0)
+                .collect()
+        } else {
+            vec![]
+        }
+    } else {
+        // Fallback: text search
+        code_units
+            .iter()
+            .filter_map(|u| {
+                if u.code.to_lowercase().contains(&q) {
+                    Some((1.0, u))
+                } else if u.file_path.to_lowercase().contains(&q) {
+                    Some((0.8, u))
+                } else {
+                    None
+                }
+            })
+            .collect()
+    };
+
     matches.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
     let results: Vec<SearchResultResponse> = matches
         .into_iter()

@@ -7,7 +7,7 @@ Cloudflare Worker deployment of the ColGREP MCP server backend. Provides user au
 - **Password auth**: Register and login with email/password (PBKDF2-SHA256)
 - **Codebases**: Create, list, view, delete codebases keyed by user
 - **Index upload**: Upload code units (file_path, line_number, code, unit_type) to R2
-- **Search**: Text search over stored code units (semantic search via Vectorize coming later)
+- **Search**: Text search or **semantic search** via [Hugging Face Inference API](https://huggingface.co/inference-api) when `HF_TOKEN` is set
 - **Web UI**: Login, register, dashboard pages
 
 ## Prerequisites
@@ -37,6 +37,12 @@ wrangler kv namespace create SESSIONS
 Replace placeholders in `wrangler.toml`:
 - `database_id` from `wrangler d1 create`
 - `id` under `[[kv_namespaces]]` from `wrangler kv namespace create`
+
+Optional – enable semantic search via Hugging Face Inference API:
+```bash
+wrangler secret put HF_TOKEN
+# Paste your Hugging Face token (from https://huggingface.co/settings/tokens)
+```
 
 ### 3. Run migrations
 

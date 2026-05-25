@@ -52,6 +52,14 @@ pub struct UploadIndexRequest {
     pub code_units: Vec<CodeUnitUpload>,
 }
 
+/// Stored index blob in R2: code units + optional embeddings from HF Inference API.
+#[derive(Debug, Deserialize, Serialize)]
+pub struct IndexBlob {
+    pub code_units: Vec<CodeUnitUpload>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub embeddings: Option<Vec<Vec<f32>>>,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct SearchRequest {
     pub query: String,
